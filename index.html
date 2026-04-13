@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuimiCorp — Drone Business Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --surface2: #f1f0ee;
+    --border: rgba(0,0,0,0.1);
+    --border-strong: rgba(0,0,0,0.18);
+    --text: #1a1a1a;
+    --text-secondary: #6b6b68;
+    --text-tertiary: #9a9a96;
+    --green: #1D9E75;
+    --red: #E24B4A;
+    --blue: #378ADD;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1a;
+      --surface: #242424;
+      --surface2: #2e2e2e;
+      --border: rgba(255,255,255,0.1);
+      --border-strong: rgba(255,255,255,0.18);
+      --text: #f0f0ee;
+      --text-secondary: #a0a09c;
+      --text-tertiary: #6a6a66;
+    }
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── Lock screen ── */
+  #lock-screen {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+
+  .lock-box {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 340px;
+    text-align: center;
+  }
+
+  .lock-box h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .lock-box p  { font-size: 13px; color: var(--text-secondary); margin-bottom: 24px; }
+
+  .lock-box input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 0.5px solid var(--border-strong);
+    border-radius: var(--radius);
+    font-size: 15px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: inherit;
+    text-align: center;
+    letter-spacing: .1em;
+    margin-bottom: 12px;
+  }
+
+  .lock-box input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(55,138,221,0.12); }
+
+  .lock-box button {
+    width: 100%;
+    padding: 10px;
+    background: var(--text);
+    color: var(--surface);
+    border: none;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .lock-box button:hover { opacity: .85; }
+  .lock-error { font-size: 12px; color: var(--red); margin-top: 8px; min-height: 18px; }
+
+  /* ── Config screen ── */
+  #config-screen {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 999;
+  }
+
+  .config-box {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 36px;
+    width: 100%;
+    max-width: 480px;
+  }
+
+  .config-box h2 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .config-box p  { font-size: 13px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.6; }
+
+  .config-field { margin-bottom: 14px; }
+  .config-field label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); margin-bottom: 4px; }
+  .config-field input {
+    width: 100%; padding: 9px 12px;
+    border: 0.5px solid var(--border-strong);
+    border-radius: var(--radius);
+    font-size: 13px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: monospace;
+  }
+  .config-field input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(55,138,221,0.12); }
+
+  .config-box button {
+    width: 100%; padding: 10px;
+    background: var(--text); color: var(--surface);
+    border: none; border-radius: var(--radius);
+    font-size: 14px; font-family: inherit; font-weight: 500; cursor: pointer;
+    margin-top: 8px;
+  }
+
+  .config-box button:hover { opacity: .85; }
+  .config-note { font-size: 11px; color: var(--text-tertiary); margin-top: 16px; line-height: 1.6; }
+  .config-error { font-size: 12px; color: var(--red); margin-top: 10px; min-height: 18px; }
+
+  /* ── App ── */
+  #app { display: none; }
+
+  header {
+    background: var(--surface);
+    border-bottom: 0.5px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .header-left { display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  header span { font-size: 13px; color: var(--text-secondary); }
+
+  .header-right { display: flex; align-items: center; gap: 8px; }
+  .sync-status { font-size: 11px; color: var(--text-tertiary); }
+  .sync-status.ok { color: var(--green); }
+  .sync-status.err { color: var(--red); }
+
+  .btn-sm {
+    padding: 5px 12px;
+    border: 0.5px solid var(--border-strong);
+    border-radius: var(--radius);
+    cursor: pointer; font-size: 12px;
+    background: var(--surface); color: var(--text-secondary);
+    font-family: inherit;
+  }
+  .btn-sm:hover { background: var(--surface2); }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 24px 20px; }
+
+  .tabs {
+    display: flex; gap: 2px;
+    border-bottom: 0.5px solid var(--border);
+    margin-bottom: 24px;
+  }
+
+  .tab {
+    padding: 9px 18px; cursor: pointer;
+    font-size: 13px; color: var(--text-secondary);
+    border: none; background: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -0.5px; transition: color .15s;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+
+  .section { display: none; }
+  .section.active { display: block; }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px; margin-bottom: 20px;
+  }
+
+  .metric { background: var(--surface2); border-radius: var(--radius); padding: 14px 16px; }
+  .metric-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+  .metric-value { font-size: 22px; font-weight: 500; letter-spacing: -0.02em; }
+  .positive { color: var(--green); }
+  .negative { color: var(--red); }
+  .neutral  { color: var(--text); }
+
+  .card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 16px; }
+  .card h3 { font-size: 14px; font-weight: 500; margin-bottom: 14px; }
+
+  .form-grid { display: grid; gap: 10px; margin-bottom: 10px; }
+  .form-grid-4 { grid-template-columns: 2fr 1.5fr 1fr 1fr; }
+  .form-grid-3 { grid-template-columns: 2fr 1fr 1fr; }
+  .form-grid-2 { grid-template-columns: 1fr 1fr; }
+
+  label { display: block; font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+
+  input, select {
+    width: 100%; padding: 8px 10px;
+    border: 0.5px solid var(--border-strong);
+    border-radius: var(--radius);
+    font-size: 13px; background: var(--bg); color: var(--text);
+    font-family: inherit; transition: border-color .15s;
+  }
+
+  input:focus, select:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(55,138,221,0.12); }
+
+  .btn {
+    padding: 8px 16px; border: 0.5px solid var(--border-strong);
+    border-radius: var(--radius); cursor: pointer;
+    font-size: 13px; background: var(--surface); color: var(--text);
+    font-family: inherit; transition: background .15s; white-space: nowrap;
+  }
+
+  .btn:hover { background: var(--surface2); }
+  .btn-primary { background: var(--text); color: var(--surface); border-color: var(--text); }
+  .btn-primary:hover { opacity: .85; background: var(--text); }
+  .btn-danger { color: var(--red); border-color: transparent; padding: 4px 8px; font-size: 13px; }
+  .btn-danger:hover { background: rgba(226,75,74,0.08); }
+
+  .form-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); text-align: left; padding: 8px 10px; border-bottom: 0.5px solid var(--border); }
+  td { padding: 9px 10px; border-bottom: 0.5px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .tag-capex { background: #E6F1FB; color: #185FA5; }
+  .tag-opex  { background: #EEEDFE; color: #534AB7; }
+  .tag-rev   { background: #E1F5EE; color: #0F6E56; }
+
+  @media (prefers-color-scheme: dark) {
+    .tag-capex { background: #0c447c; color: #85b7eb; }
+    .tag-opex  { background: #3c3489; color: #afa9ec; }
+    .tag-rev   { background: #085041; color: #5dcaa5; }
+  }
+
+  .chart-wrap { position: relative; width: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; font-size: 12px; color: var(--text-secondary); }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .ld { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+  .empty { text-align: center; color: var(--text-tertiary); padding: 32px 0; font-size: 13px; }
+  .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .table-header h3 { margin: 0; }
+  .total-badge { font-size: 13px; color: var(--text-secondary); }
+
+  .cf-filter { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .cf-filter label { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--text-secondary); margin: 0; }
+  .cf-filter select { width: auto; }
+
+  tfoot td { font-weight: 500; font-size: 13px; border-top: 0.5px solid var(--border-strong); border-bottom: none; }
+  .secondary-note { font-size: 11px; color: var(--text-tertiary); display: block; margin-top: 2px; }
+
+  .loading-overlay {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 998; font-size: 13px; color: var(--text-secondary);
+  }
+
+  @media (max-width: 680px) {
+    .form-grid-4 { grid-template-columns: 1fr 1fr; }
+    .form-grid-3 { grid-template-columns: 1fr 1fr; }
+    .metric-grid { grid-template-columns: repeat(2, 1fr); }
+    .header-left { flex-direction: column; gap: 2px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Config screen (shown once to enter Supabase credentials) -->
+<div id="config-screen" style="display:none">
+  <div class="config-box">
+    <h2>Connect to Supabase</h2>
+    <p>You only need to do this once. Open your Supabase project, go to <strong>Settings → API</strong>, and paste the values below. They will be saved in this browser.</p>
+    <div class="config-field">
+      <label>Project URL</label>
+      <input id="cfg-url" type="text" placeholder="https://xxxxxxxxxxxx.supabase.co" />
+    </div>
+    <div class="config-field">
+      <label>Anon / public key</label>
+      <input id="cfg-key" type="text" placeholder="eyJhbGciOiJIUzI1NiIs..." />
+    </div>
+    <div class="config-field">
+      <label>App password (you choose)</label>
+      <input id="cfg-pass" type="password" placeholder="Set a password to protect the app" />
+    </div>
+    <button onclick="saveConfig()">Save and continue →</button>
+    <div class="config-error" id="cfg-error"></div>
+    <p class="config-note">
+      Your Supabase anon key is safe to use here — it's a public read/write key protected by Row Level Security policies you'll set up in Supabase. Your app password is hashed and stored locally.
+    </p>
+  </div>
+</div>
+
+<!-- Lock screen -->
+<div id="lock-screen" style="display:none">
+  <div class="lock-box">
+    <h2>QuimiCorp · Drone Tracker</h2>
+    <p>Enter your password to continue</p>
+    <input id="lock-input" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')unlock()" />
+    <button onclick="unlock()">Unlock</button>
+    <div class="lock-error" id="lock-error"></div>
+  </div>
+</div>
+
+<!-- Loading -->
+<div id="loading-overlay" class="loading-overlay" style="display:none">
+  Loading data…
+</div>
+
+<!-- Main app -->
+<div id="app">
+  <header>
+    <div class="header-left">
+      <h1>QuimiCorp · Drone Business Tracker</h1>
+      <span>Línea de negocio: inspección aérea industrial</span>
+    </div>
+    <div class="header-right">
+      <span class="sync-status" id="sync-status">—</span>
+      <button class="btn-sm" onclick="showConfig()">⚙ Settings</button>
+      <button class="btn-sm" onclick="lockApp()">Lock</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('dashboard')">Dashboard</button>
+      <button class="tab" onclick="showTab('costs')">Costs</button>
+      <button class="tab" onclick="showTab('revenue')">Revenue</button>
+      <button class="tab" onclick="showTab('cashflow')">Cash flow</button>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="tab-dashboard" class="section active">
+      <div class="metric-grid" id="kpi-grid"></div>
+      <div class="card">
+        <div class="legend">
+          <span><span class="ld" style="background:#E24B4A"></span>Total invested (cumulative)</span>
+          <span><span class="ld" style="background:#1D9E75"></span>Total revenue (cumulative)</span>
+          <span><span class="ld" style="background:#378ADD;opacity:.6"></span>Cumulative P&amp;L</span>
+        </div>
+        <div class="chart-wrap" style="height:260px">
+          <canvas id="chartMain" role="img" aria-label="Cumulative investment vs revenue over time">Chart loading...</canvas>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Cost breakdown by category</h3>
+        <div class="chart-wrap" style="height:220px">
+          <canvas id="chartCosts" role="img" aria-label="Cost breakdown by category">Chart loading...</canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- COSTS -->
+    <div id="tab-costs" class="section">
+      <div class="card">
+        <h3>Add cost entry</h3>
+        <div class="form-grid form-grid-4">
+          <div><label>Description</label><input id="c-desc" placeholder="e.g. DJI Matrice 4E" /></div>
+          <div><label>Category</label>
+            <select id="c-cat">
+              <option>Equipment</option>
+              <option>Training / AVIATE</option>
+              <option>iHawk license</option>
+              <option>Salaries</option>
+              <option>Regulatory / AFAC</option>
+              <option>Marketing</option>
+              <option>Operations</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div><label>Amount (MXN)</label><input id="c-amount" type="number" placeholder="0" min="0" /></div>
+          <div><label>Type</label><select id="c-type"><option value="capex">CapEx</option><option value="opex">OpEx</option></select></div>
+        </div>
+        <div class="form-grid form-grid-2">
+          <div><label>Month</label><input id="c-month" type="month" /></div>
+          <div><label>Notes (optional)</label><input id="c-notes" placeholder="Any context..." /></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" onclick="addCost()">+ Add cost</button></div>
+      </div>
+      <div class="card">
+        <div class="table-header">
+          <h3>Cost entries</h3>
+          <span class="total-badge" id="cost-total"></span>
+        </div>
+        <div id="cost-table-wrap"></div>
+      </div>
+    </div>
+
+    <!-- REVENUE -->
+    <div id="tab-revenue" class="section">
+      <div class="card">
+        <h3>Add revenue entry</h3>
+        <div class="form-grid form-grid-3">
+          <div><label>Client / project</label><input id="r-client" placeholder="e.g. Diavaz — inspección flare" /></div>
+          <div><label>Revenue type</label>
+            <select id="r-type">
+              <option>Data collection (project)</option>
+              <option>iHawk license (resale)</option>
+              <option>Managed inspection retainer</option>
+              <option>AVIATE / advisory</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div><label>Amount (MXN)</label><input id="r-amount" type="number" placeholder="0" min="0" /></div>
+        </div>
+        <div class="form-grid form-grid-2">
+          <div><label>Month</label><input id="r-month" type="month" /></div>
+          <div><label>Notes (optional)</label><input id="r-notes" placeholder="Contract ref, retainer terms..." /></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" onclick="addRevenue()">+ Add revenue</button></div>
+      </div>
+      <div class="card">
+        <div class="table-header">
+          <h3>Revenue entries</h3>
+          <span class="total-badge" id="rev-total"></span>
+        </div>
+        <div id="rev-table-wrap"></div>
+      </div>
+    </div>
+
+    <!-- CASH FLOW -->
+    <div id="tab-cashflow" class="section">
+      <div class="cf-filter">
+        <label>View through:</label>
+        <select id="cf-month-end" onchange="renderCashflow()"></select>
+      </div>
+      <div class="card" id="cf-table-wrap"></div>
+      <div class="card" style="margin-top:0">
+        <div class="legend">
+          <span><span class="ld" style="background:#E24B4A;opacity:.7"></span>Monthly costs</span>
+          <span><span class="ld" style="background:#1D9E75;opacity:.7"></span>Monthly revenue</span>
+        </div>
+        <div class="chart-wrap" style="height:240px">
+          <canvas id="chartCF" role="img" aria-label="Monthly costs vs revenue">Chart loading...</canvas>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─── Config & auth ────────────────────────────────────────────────────────────
+const STORAGE_KEY_URL  = 'qc_supa_url';
+const STORAGE_KEY_KEY  = 'qc_supa_key';
+const STORAGE_KEY_HASH = 'qc_pass_hash';
+const SESSION_KEY      = 'qc_session';
+
+function getConfig() {
+  return {
+    url: localStorage.getItem(STORAGE_KEY_URL) || '',
+    key: localStorage.getItem(STORAGE_KEY_KEY) || '',
+    hash: localStorage.getItem(STORAGE_KEY_HASH) || ''
+  };
+}
+
+async function hashPassword(pw) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function saveConfig() {
+  const url  = document.getElementById('cfg-url').value.trim().replace(/\/$/, '');
+  const key  = document.getElementById('cfg-key').value.trim();
+  const pass = document.getElementById('cfg-pass').value;
+  const err  = document.getElementById('cfg-error');
+  if (!url || !key || !pass) { err.textContent = 'All fields are required.'; return; }
+  if (!url.startsWith('https://')) { err.textContent = 'URL must start with https://'; return; }
+  err.textContent = 'Testing connection…';
+  try {
+    const res = await fetch(`${url}/rest/v1/costs?limit=1`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+    if (!res.ok && res.status !== 406) throw new Error(`HTTP ${res.status}`);
+  } catch(e) {
+    err.textContent = `Could not connect: ${e.message}. Check your URL and key.`;
+    return;
+  }
+  const hash = await hashPassword(pass);
+  localStorage.setItem(STORAGE_KEY_URL, url);
+  localStorage.setItem(STORAGE_KEY_KEY, key);
+  localStorage.setItem(STORAGE_KEY_HASH, hash);
+  err.textContent = '';
+  document.getElementById('config-screen').style.display = 'none';
+  showLock();
+}
+
+function showConfig() {
+  const cfg = getConfig();
+  document.getElementById('cfg-url').value = cfg.url;
+  document.getElementById('cfg-key').value = cfg.key;
+  document.getElementById('cfg-pass').value = '';
+  document.getElementById('cfg-error').textContent = '';
+  document.getElementById('config-screen').style.display = 'flex';
+}
+
+async function unlock() {
+  const pw  = document.getElementById('lock-input').value;
+  const cfg = getConfig();
+  const hash = await hashPassword(pw);
+  if (hash !== cfg.hash) {
+    document.getElementById('lock-error').textContent = 'Incorrect password.';
+    document.getElementById('lock-input').value = '';
+    return;
+  }
+  sessionStorage.setItem(SESSION_KEY, '1');
+  document.getElementById('lock-screen').style.display = 'none';
+  document.getElementById('lock-error').textContent = '';
+  document.getElementById('lock-input').value = '';
+  showApp();
+}
+
+function lockApp() {
+  sessionStorage.removeItem(SESSION_KEY);
+  document.getElementById('app').style.display = 'none';
+  showLock();
+}
+
+function showLock() {
+  document.getElementById('lock-screen').style.display = 'flex';
+  setTimeout(() => document.getElementById('lock-input').focus(), 100);
+}
+
+// ─── Supabase API ─────────────────────────────────────────────────────────────
+function sbHeaders() {
+  const cfg = getConfig();
+  return { 'Content-Type': 'application/json', apikey: cfg.key, Authorization: `Bearer ${cfg.key}`, Prefer: 'return=representation' };
+}
+
+function sbUrl(table) {
+  return `${getConfig().url}/rest/v1/${table}`;
+}
+
+async function sbGet(table) {
+  const res = await fetch(`${sbUrl(table)}?order=month.asc`, { headers: sbHeaders() });
+  if (!res.ok) throw new Error(`Fetch ${table} failed: ${res.status}`);
+  return res.json();
+}
+
+async function sbInsert(table, row) {
+  const res = await fetch(sbUrl(table), { method: 'POST', headers: sbHeaders(), body: JSON.stringify(row) });
+  if (!res.ok) throw new Error(`Insert ${table} failed: ${res.status}`);
+  return res.json();
+}
+
+async function sbDelete(table, id) {
+  const res = await fetch(`${sbUrl(table)}?id=eq.${id}`, { method: 'DELETE', headers: sbHeaders() });
+  if (!res.ok) throw new Error(`Delete ${table} failed: ${res.status}`);
+}
+
+function setSyncStatus(state, msg) {
+  const el = document.getElementById('sync-status');
+  el.textContent = msg;
+  el.className = 'sync-status ' + (state || '');
+}
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let costs = [], revenue = [];
+let chartMain = null, chartCosts = null, chartCF = null;
+
+async function showApp() {
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('loading-overlay').style.display = 'flex';
+  setSyncStatus('', 'Loading…');
+  try {
+    [costs, revenue] = await Promise.all([sbGet('costs'), sbGet('revenue')]);
+    setSyncStatus('ok', 'Synced');
+  } catch(e) {
+    setSyncStatus('err', 'Sync error');
+    console.error(e);
+  }
+  document.getElementById('loading-overlay').style.display = 'none';
+  render();
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function fmt(n) { return '$' + Math.round(n).toLocaleString('es-MX'); }
+function today() { return new Date().toISOString().slice(0, 7); }
+function getAllMonths() {
+  const all = new Set();
+  costs.forEach(c => all.add(c.month));
+  revenue.forEach(r => all.add(r.month));
+  return [...all].sort();
+}
+
+// ─── Tab navigation ───────────────────────────────────────────────────────────
+function showTab(t) {
+  const names = ['dashboard','costs','revenue','cashflow'];
+  document.querySelectorAll('.tab').forEach((b,i) => b.classList.toggle('active', names[i]===t));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('tab-'+t).classList.add('active');
+  if (t === 'cashflow') renderCashflow();
+}
+
+// ─── Add entries ──────────────────────────────────────────────────────────────
+async function addCost() {
+  const desc   = document.getElementById('c-desc').value.trim();
+  const amount = parseFloat(document.getElementById('c-amount').value);
+  const month  = document.getElementById('c-month').value;
+  if (!desc || !amount || isNaN(amount) || !month) { alert('Please fill description, amount and month.'); return; }
+  const row = { description: desc, cat: document.getElementById('c-cat').value, amount, type: document.getElementById('c-type').value, month, notes: document.getElementById('c-notes').value.trim() };
+  setSyncStatus('', 'Saving…');
+  try {
+    const rows = await sbInsert('costs', row);
+    costs.push(rows[0]);
+    setSyncStatus('ok', 'Saved');
+    document.getElementById('c-desc').value = '';
+    document.getElementById('c-amount').value = '';
+    document.getElementById('c-notes').value = '';
+    render();
+  } catch(e) { setSyncStatus('err', 'Save failed'); console.error(e); }
+}
+
+async function addRevenue() {
+  const client = document.getElementById('r-client').value.trim();
+  const amount = parseFloat(document.getElementById('r-amount').value);
+  const month  = document.getElementById('r-month').value;
+  if (!client || !amount || isNaN(amount) || !month) { alert('Please fill client, amount and month.'); return; }
+  const row = { client, type: document.getElementById('r-type').value, amount, month, notes: document.getElementById('r-notes').value.trim() };
+  setSyncStatus('', 'Saving…');
+  try {
+    const rows = await sbInsert('revenue', row);
+    revenue.push(rows[0]);
+    setSyncStatus('ok', 'Saved');
+    document.getElementById('r-client').value = '';
+    document.getElementById('r-amount').value = '';
+    document.getElementById('r-notes').value = '';
+    render();
+  } catch(e) { setSyncStatus('err', 'Save failed'); console.error(e); }
+}
+
+async function deleteCost(id) {
+  if (!confirm('Delete this entry?')) return;
+  setSyncStatus('', 'Deleting…');
+  try {
+    await sbDelete('costs', id);
+    costs = costs.filter(c => c.id !== id);
+    setSyncStatus('ok', 'Deleted');
+    render();
+  } catch(e) { setSyncStatus('err', 'Delete failed'); console.error(e); }
+}
+
+async function deleteRevenue(id) {
+  if (!confirm('Delete this entry?')) return;
+  setSyncStatus('', 'Deleting…');
+  try {
+    await sbDelete('revenue', id);
+    revenue = revenue.filter(r => r.id !== id);
+    setSyncStatus('ok', 'Deleted');
+    render();
+  } catch(e) { setSyncStatus('err', 'Delete failed'); console.error(e); }
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function render() {
+  renderKPIs(); renderCostTable(); renderRevTable(); renderMainChart(); renderCostChart();
+  const months = getAllMonths();
+  const sel = document.getElementById('cf-month-end');
+  const cur = sel.value;
+  sel.innerHTML = months.map(m => `<option value="${m}" ${m===cur?'selected':''}>${m}</option>`).join('');
+  if (!sel.value && months.length) sel.value = months[months.length-1];
+}
+
+function renderKPIs() {
+  const totalCosts = costs.reduce((s,c) => s+c.amount, 0);
+  const totalRev   = revenue.reduce((s,r) => s+r.amount, 0);
+  const pl  = totalRev - totalCosts;
+  const roi = totalCosts > 0 ? (pl/totalCosts*100) : 0;
+  const months = getAllMonths();
+  let breakEvenMonth = '—';
+  let cumPL = 0;
+  const rByM = {}, cByM = {};
+  revenue.forEach(r => rByM[r.month] = (rByM[r.month]||0)+r.amount);
+  costs.forEach(c => cByM[c.month] = (cByM[c.month]||0)+c.amount);
+  for (const m of months) {
+    cumPL += (rByM[m]||0) - (cByM[m]||0);
+    if (cumPL >= 0) { breakEvenMonth = m; break; }
+  }
+  const opex = costs.filter(c=>c.type==='opex').reduce((s,c)=>s+c.amount,0);
+  const gm   = (totalRev>0&&opex>0) ? ((totalRev-opex)/totalRev*100) : null;
+
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="metric"><div class="metric-label">Total invested</div><div class="metric-value negative">${fmt(totalCosts)}</div></div>
+    <div class="metric"><div class="metric-label">Total revenue</div><div class="metric-value positive">${fmt(totalRev)}</div></div>
+    <div class="metric"><div class="metric-label">Cumulative P&amp;L</div><div class="metric-value ${pl>=0?'positive':'negative'}">${pl>=0?'+':''}${fmt(pl)}</div></div>
+    <div class="metric"><div class="metric-label">ROI</div><div class="metric-value ${roi>=0?'positive':'negative'}">${roi.toFixed(1)}%</div></div>
+    <div class="metric"><div class="metric-label">Break-even</div><div class="metric-value neutral" style="font-size:17px">${breakEvenMonth}</div></div>
+    ${gm!==null?`<div class="metric"><div class="metric-label">Gross margin</div><div class="metric-value ${gm>=0?'positive':'negative'}">${gm.toFixed(1)}%</div></div>`:''}
+  `;
+}
+
+function renderCostTable() {
+  const sorted = [...costs].sort((a,b)=>b.month.localeCompare(a.month));
+  const total  = costs.reduce((s,c)=>s+c.amount,0);
+  document.getElementById('cost-total').textContent = costs.length ? `Total: ${fmt(total)}` : '';
+  document.getElementById('cost-table-wrap').innerHTML = sorted.length
+    ? `<table><thead><tr><th>Month</th><th>Description</th><th>Category</th><th>Type</th><th style="text-align:right">Amount (MXN)</th><th></th></tr></thead>
+       <tbody>${sorted.map(c=>`<tr>
+         <td style="color:var(--text-secondary);white-space:nowrap">${c.month}</td>
+         <td>${c.description}${c.notes?`<span class="secondary-note">${c.notes}</span>`:''}</td>
+         <td>${c.cat}</td>
+         <td><span class="tag tag-${c.type}">${c.type.toUpperCase()}</span></td>
+         <td style="text-align:right;font-variant-numeric:tabular-nums">${fmt(c.amount)}</td>
+         <td><button class="btn btn-danger" onclick="deleteCost(${c.id})">×</button></td>
+       </tr>`).join('')}</tbody></table>`
+    : `<div class="empty">No cost entries yet.</div>`;
+}
+
+function renderRevTable() {
+  const sorted = [...revenue].sort((a,b)=>b.month.localeCompare(a.month));
+  const total  = revenue.reduce((s,r)=>s+r.amount,0);
+  document.getElementById('rev-total').textContent = revenue.length ? `Total: ${fmt(total)}` : '';
+  document.getElementById('rev-table-wrap').innerHTML = sorted.length
+    ? `<table><thead><tr><th>Month</th><th>Client / project</th><th>Type</th><th style="text-align:right">Amount (MXN)</th><th></th></tr></thead>
+       <tbody>${sorted.map(r=>`<tr>
+         <td style="color:var(--text-secondary);white-space:nowrap">${r.month}</td>
+         <td>${r.client}${r.notes?`<span class="secondary-note">${r.notes}</span>`:''}</td>
+         <td><span class="tag tag-rev">${r.type}</span></td>
+         <td style="text-align:right;font-variant-numeric:tabular-nums">${fmt(r.amount)}</td>
+         <td><button class="btn btn-danger" onclick="deleteRevenue(${r.id})">×</button></td>
+       </tr>`).join('')}</tbody></table>`
+    : `<div class="empty">No revenue entries yet.</div>`;
+}
+
+function renderMainChart() {
+  const months = getAllMonths();
+  if (!months.length) { if(chartMain){chartMain.destroy();chartMain=null;} return; }
+  const rByM={},cByM={};
+  revenue.forEach(r=>rByM[r.month]=(rByM[r.month]||0)+r.amount);
+  costs.forEach(c=>cByM[c.month]=(cByM[c.month]||0)+c.amount);
+  let cc=0,cr=0; const dC=[],dR=[],dP=[];
+  months.forEach(m=>{ cc+=(cByM[m]||0); cr+=(rByM[m]||0); dC.push(Math.round(cc)); dR.push(Math.round(cr)); dP.push(Math.round(cr-cc)); });
+  if(chartMain)chartMain.destroy();
+  chartMain = new Chart(document.getElementById('chartMain').getContext('2d'),{
+    type:'line', data:{labels:months,datasets:[
+      {label:'Total invested',data:dC,borderColor:'#E24B4A',backgroundColor:'rgba(226,75,74,0.07)',tension:.35,fill:true,pointRadius:3,borderWidth:2},
+      {label:'Cumulative revenue',data:dR,borderColor:'#1D9E75',backgroundColor:'rgba(29,158,117,0.07)',tension:.35,fill:true,pointRadius:3,borderWidth:2},
+      {label:'Cumulative P&L',data:dP,borderColor:'#378ADD',borderDash:[5,4],tension:.35,fill:false,pointRadius:3,borderWidth:1.5}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#888'},grid:{color:'rgba(128,128,128,0.1)'}},
+              x:{grid:{display:false},ticks:{color:'#888',autoSkip:false,maxRotation:45}}}}
+  });
+}
+
+function renderCostChart() {
+  const bycat={};
+  costs.forEach(c=>bycat[c.cat]=(bycat[c.cat]||0)+c.amount);
+  const labels=Object.keys(bycat), data=labels.map(l=>Math.round(bycat[l]));
+  if(!labels.length){if(chartCosts){chartCosts.destroy();chartCosts=null;}return;}
+  const colors=['#378ADD','#534AB7','#1D9E75','#E24B4A','#BA7517','#888780','#D4537E','#639922'];
+  if(chartCosts)chartCosts.destroy();
+  chartCosts = new Chart(document.getElementById('chartCosts').getContext('2d'),{
+    type:'bar', data:{labels,datasets:[{data,backgroundColor:colors.slice(0,labels.length),borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},
+      scales:{x:{ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#888'},grid:{color:'rgba(128,128,128,0.1)'}},
+              y:{grid:{display:false},ticks:{color:'#888'}}}}
+  });
+}
+
+function renderCashflow() {
+  const months=getAllMonths();
+  const wrap=document.getElementById('cf-table-wrap');
+  if(!months.length){wrap.innerHTML='<div class="empty">No data yet.</div>';return;}
+  const sel=document.getElementById('cf-month-end');
+  const upTo=sel.value||months[months.length-1];
+  const rByM={},cByM={};
+  revenue.forEach(r=>rByM[r.month]=(rByM[r.month]||0)+r.amount);
+  costs.forEach(c=>cByM[c.month]=(cByM[c.month]||0)+c.amount);
+  const vis=months.filter(m=>m<=upTo);
+  let cc=0,cr=0;
+  const rows=vis.map(m=>{const mc=cByM[m]||0,mr=rByM[m]||0;cc+=mc;cr+=mr;return{m,mc,mr,mpl:mr-mc,cumPL:cr-cc};});
+  const totC=rows.reduce((s,r)=>s+r.mc,0), totR=rows.reduce((s,r)=>s+r.mr,0);
+  const finalPL=rows.length?rows[rows.length-1].cumPL:0;
+  wrap.innerHTML=`<table>
+    <thead><tr><th>Month</th><th style="text-align:right">Costs</th><th style="text-align:right">Revenue</th><th style="text-align:right">Monthly P&amp;L</th><th style="text-align:right">Cumulative P&amp;L</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td style="color:var(--text-secondary)">${r.m}</td>
+      <td style="text-align:right;color:var(--red)">${fmt(r.mc)}</td>
+      <td style="text-align:right;color:var(--green)">${fmt(r.mr)}</td>
+      <td style="text-align:right;font-weight:500;color:${r.mpl>=0?'var(--green)':'var(--red)'}">${r.mpl>=0?'+':''}${fmt(r.mpl)}</td>
+      <td style="text-align:right;font-weight:500;color:${r.cumPL>=0?'var(--green)':'var(--red)'}">${r.cumPL>=0?'+':''}${fmt(r.cumPL)}</td>
+    </tr>`).join('')}</tbody>
+    <tfoot><tr><td>Total</td><td style="text-align:right;color:var(--red)">${fmt(totC)}</td><td style="text-align:right;color:var(--green)">${fmt(totR)}</td><td></td>
+      <td style="text-align:right;color:${finalPL>=0?'var(--green)':'var(--red)'}"> ${finalPL>=0?'+':''}${fmt(finalPL)}</td></tr></tfoot>
+  </table>`;
+  if(chartCF)chartCF.destroy();
+  chartCF=new Chart(document.getElementById('chartCF').getContext('2d'),{
+    type:'bar',data:{labels:rows.map(r=>r.m),datasets:[
+      {label:'Costs',data:rows.map(r=>Math.round(r.mc)),backgroundColor:'rgba(226,75,74,0.65)',borderRadius:3},
+      {label:'Revenue',data:rows.map(r=>Math.round(r.mr)),backgroundColor:'rgba(29,158,117,0.65)',borderRadius:3}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{grid:{display:false},ticks:{autoSkip:false,maxRotation:45,color:'#888'}},
+              y:{ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#888'},grid:{color:'rgba(128,128,128,0.1)'}}}}
+  });
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.getElementById('c-month').value = today();
+document.getElementById('r-month').value = today();
+
+const cfg = getConfig();
+if (!cfg.url || !cfg.key || !cfg.hash) {
+  document.getElementById('config-screen').style.display = 'flex';
+} else if (sessionStorage.getItem(SESSION_KEY)) {
+  showApp();
+} else {
+  showLock();
+}
+</script>
+</body>
+</html>
