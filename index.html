@@ -495,14 +495,8 @@ async function saveConfig() {
   const err  = document.getElementById('cfg-error');
   if (!url || !key || !pass) { err.textContent = 'All fields are required.'; return; }
   if (!url.startsWith('https://')) { err.textContent = 'URL must start with https://'; return; }
-  err.textContent = 'Testing connection…';
-  try {
-    const res = await fetch(`${url}/rest/v1/costs?limit=1`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
-    if (!res.ok && res.status !== 406) throw new Error(`HTTP ${res.status}`);
-  } catch(e) {
-    err.textContent = `Could not connect: ${e.message}. Check your URL and key.`;
-    return;
-  }
+  if (key.length < 20) { err.textContent = 'That doesn\'t look like a valid anon key.'; return; }
+  err.textContent = 'Saving…';
   const hash = await hashPassword(pass);
   localStorage.setItem(STORAGE_KEY_URL, url);
   localStorage.setItem(STORAGE_KEY_KEY, key);
@@ -824,17 +818,29 @@ function renderCashflow() {
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
-document.getElementById('c-month').value = today();
-document.getElementById('r-month').value = today();
+function init() {
+  document.getElementById('c-month').value = today();
+  document.getElementById('r-month').value = today();
 
-const cfg = getConfig();
-if (!cfg.url || !cfg.key || !cfg.hash) {
-  document.getElementById('config-screen').style.display = 'flex';
-} else if (sessionStorage.getItem(SESSION_KEY)) {
-  showApp();
-} else {
-  showLock();
+  // Test localStorage is actually working
+  try {
+    localStorage.setItem('_test', '1');
+    localStorage.removeItem('_test');
+  } catch(e) {
+    alert('Your browser is blocking localStorage (private mode?). Config cannot be saved between sessions.');
+  }
+
+  const cfg = getConfig();
+  if (!cfg.url || !cfg.key || !cfg.hash) {
+    document.getElementById('config-screen').style.display = 'flex';
+  } else if (sessionStorage.getItem(SESSION_KEY)) {
+    showApp();
+  } else {
+    showLock();
+  }
 }
+
+document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>
