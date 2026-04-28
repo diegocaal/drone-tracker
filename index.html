@@ -614,6 +614,10 @@
               <div><label>Viáticos / persona / día (MXN)</label><input id="q-perdiem" type="number" value="600" step="50" oninput="qCalc()" /></div>
               <div><label>Personas en sitio</label><input id="q-persons" type="number" value="2" min="1" max="6" oninput="qCalc()" /></div>
             </div>
+            <div class="form-grid form-grid-2">
+              <div><label>Boletos de avión — total crew (MXN) <span style="font-size:10px;color:var(--text-tertiary);text-transform:none;letter-spacing:0">dejar en 0 si no aplica</span></label><input id="q-airfare" type="number" value="0" step="100" min="0" oninput="qCalc()" /></div>
+              <div style="display:flex;align-items:flex-end;padding-bottom:2px"><span style="font-size:12px;color:var(--text-secondary)">Se suma directo a Movilización (Layer A)</span></div>
+            </div>
           </div>
 
           <div class="card">
@@ -654,6 +658,12 @@
                 </select>
               </div>
             </div>
+          </div>
+
+          <div class="card">
+            <div class="cot-section-label">Otros conceptos <span style="font-size:10px;color:var(--text-tertiary);text-transform:none;letter-spacing:0;font-weight:400">— conceptos adicionales no contemplados arriba</span></div>
+            <div id="extras-list"></div>
+            <button class="btn" style="margin-top:8px;font-size:12px" onclick="addExtra()">+ Agregar concepto</button>
           </div>
 
           <div class="card">
@@ -1169,6 +1179,43 @@ function populateDroneSelect() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// EXTRAS
+// ═══════════════════════════════════════════════════════════════════════════════
+window._extras = [];
+
+function addExtra() {
+  window._extras.push({ id: Date.now(), desc: '', amount: 0 });
+  renderExtras();
+}
+
+function removeExtra(id) {
+  window._extras = window._extras.filter(e => e.id !== id);
+  renderExtras();
+  qCalc();
+}
+
+function renderExtras() {
+  const list = document.getElementById('extras-list');
+  if (!window._extras.length) { list.innerHTML = ''; return; }
+  list.innerHTML = window._extras.map(e => `
+    <div style="display:grid;grid-template-columns:1fr 160px 36px;gap:8px;align-items:center;margin-bottom:8px">
+      <input type="text" placeholder="Descripción del concepto" value="${e.desc}"
+        oninput="updateExtra(${e.id},'desc',this.value)"
+        style="padding:8px 10px;border:0.5px solid var(--border-strong);border-radius:var(--radius);font-size:13px;background:var(--bg);color:var(--text);font-family:inherit" />
+      <input type="number" placeholder="Monto MXN" value="${e.amount || ''}" min="0" step="100"
+        oninput="updateExtra(${e.id},'amount',this.value)"
+        style="padding:8px 10px;border:0.5px solid var(--border-strong);border-radius:var(--radius);font-size:13px;background:var(--bg);color:var(--text);font-family:inherit" />
+      <button class="btn btn-danger" onclick="removeExtra(${e.id})" style="padding:7px 10px">×</button>
+    </div>`).join('');
+}
+
+function updateExtra(id, field, val) {
+  const e = window._extras.find(x => x.id === id);
+  if (e) { e[field] = field === 'amount' ? (parseFloat(val) || 0) : val; }
+  qCalc();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // COTIZADOR
 // ═══════════════════════════════════════════════════════════════════════════════
 function g(id) { return document.getElementById(id); }
@@ -1192,9 +1239,10 @@ function qCalc() {
 
   // Layer A
   const transport  = gv('q-km') * gv('q-kmcost') * 2;
+  const airfare    = gv('q-airfare');
   const accomm     = gv('q-nights') * gv('q-hotel') * gi('q-persons');
   const perDiem    = fieldDays * gv('q-perdiem') * gi('q-persons');
-  const layerA     = transport + accomm + perDiem;
+  const layerA     = transport + airfare + accomm + perDiem;
 
   // Layer B
   const pilotCost  = gv('q-pilotrate') * gi('q-pilots') * fieldDays;
@@ -1215,7 +1263,11 @@ function qCalc() {
   const contAmt    = (layerA + layerB + layerC + insurance + permits) * contRate;
   const layerD     = insurance + permits + contAmt;
 
-  const baseCost   = layerA + layerB + layerC + layerD;
+  // Extras
+  const extrasData = window._extras || [];
+  const extrasTotal = extrasData.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+
+  const baseCost   = layerA + layerB + layerC + layerD + extrasTotal;
   const clientPrice= baseCost * (1 + margin / 100);
   const grossMarginMXN = clientPrice - baseCost;
   const perAsset   = nAssets > 0 ? clientPrice / nAssets : 0;
@@ -1223,10 +1275,11 @@ function qCalc() {
   // Store for save/pdf
   window._qData = {
     inspType, nAssets, tpa, rawFlightHrs, fieldDays,
-    transport, accomm, perDiem, layerA,
+    transport, airfare, accomm, perDiem, layerA,
     pilotCost, engCost, droneWear, consumables, layerB,
     procCost, ihawk, layerC,
     insurance, permits, contRate, contAmt, layerD,
+    extrasData, extrasTotal,
     baseCost, margin, clientPrice, grossMarginMXN, perAsset,
     client: g('q-client').value || '—',
     site:   g('q-site').value   || '—',
@@ -1239,6 +1292,7 @@ function qCalc() {
   const rows = [
     {group: 'A — Movilización'},
     {label: 'Transporte (ida y vuelta)', val: transport},
+    ...(airfare > 0 ? [{label: 'Boletos de avión — crew', val: airfare}] : []),
     {label: `Hospedaje (${gi('q-persons')} personas × ${gv('q-nights')} noches)`, val: accomm},
     {label: `Viáticos (${fieldDays} días campo × ${gi('q-persons')} personas)`, val: perDiem},
     {subtotal: 'Subtotal A', val: layerA},
@@ -1257,6 +1311,11 @@ function qCalc() {
     {label: 'Permisos / regulatorio', val: permits},
     {label: `Contingencia (${Math.round(contRate*100)}%)`, val: contAmt},
     {subtotal: 'Subtotal D', val: layerD},
+    ...(extrasData.length > 0 ? [
+      {group: 'Otros conceptos'},
+      ...extrasData.map(e => ({label: e.desc || 'Sin descripción', val: parseFloat(e.amount) || 0})),
+      {subtotal: 'Subtotal Otros', val: extrasTotal}
+    ] : []),
     {total: 'Costo base total', val: baseCost}
   ];
 
@@ -1304,6 +1363,9 @@ function loadQuote(id) {
   g('q-date').value   = q.date;
   g('q-notes').value  = q.notes || '';
   g('q-margin').value = q.margin;
+  g('q-airfare').value = q.airfare || 0;
+  window._extras = q.extrasData ? JSON.parse(JSON.stringify(q.extrasData)) : [];
+  renderExtras();
   qCalc();
   showTab('cotizador');
 }
@@ -1364,6 +1426,7 @@ function buildPrintHTML(d, ref, date) {
     <tbody>
       <tr class="pb-group"><td colspan="2">A — Movilización</td></tr>
       <tr><td style="padding-left:12px">Transporte (ida y vuelta)</td><td style="text-align:right">${fmx(d.transport)}</td></tr>
+      ${d.airfare > 0 ? `<tr><td style="padding-left:12px">Boletos de avión — crew</td><td style="text-align:right">${fmx(d.airfare)}</td></tr>` : ''}
       <tr><td style="padding-left:12px">Hospedaje</td><td style="text-align:right">${fmx(d.accomm)}</td></tr>
       <tr><td style="padding-left:12px">Viáticos</td><td style="text-align:right">${fmx(d.perDiem)}</td></tr>
       <tr class="pb-subtotal"><td>Subtotal A</td><td style="text-align:right">${fmx(d.layerA)}</td></tr>
@@ -1387,6 +1450,11 @@ function buildPrintHTML(d, ref, date) {
       <tr class="pb-subtotal"><td>Subtotal D</td><td style="text-align:right">${fmx(d.layerD)}</td></tr>
 
       <tr class="pb-total"><td>Costo base total</td><td style="text-align:right">${fmx(d.baseCost)}</td></tr>
+      ${d.extrasData && d.extrasData.length > 0 ? `
+      <tr class="pb-group"><td colspan="2">Otros conceptos</td></tr>
+      ${d.extrasData.map(e => `<tr><td style="padding-left:12px">${e.desc || 'Sin descripción'}</td><td style="text-align:right">${fmx(parseFloat(e.amount)||0)}</td></tr>`).join('')}
+      <tr class="pb-subtotal"><td>Subtotal Otros</td><td style="text-align:right">${fmx(d.extrasTotal)}</td></tr>
+      ` : ''}
     </tbody>
   </table>
 
