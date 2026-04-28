@@ -1393,9 +1393,16 @@ function renderQuotesList() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PDF / PRINT
 // ═══════════════════════════════════════════════════════════════════════════════
+function pdfFileName(ref, client) {
+  const safeClient = (client || 'Cliente').replace(/[^a-zA-Z0-9À-ÿ\s]/g, '').trim().replace(/\s+/g, '-');
+  const safeRef    = (ref || 'COT').replace(/[^a-zA-Z0-9-]/g, '');
+  return `${safeRef}_${safeClient}.pdf`;
+}
+
 function buildPrintHTML(d, ref, date) {
   const fmx = n => 'MX$ ' + Math.round(n).toLocaleString('es-MX');
   const now  = new Date().toLocaleDateString('es-MX', {year:'numeric',month:'long',day:'numeric'});
+  const totalWithExtras = d.baseCost + (d.extrasTotal || 0);
   return `
   <div class="print-header">
     <img class="print-header-logo" src="${LOGO_SRC}" alt="QuimiCorp" />
@@ -1417,52 +1424,25 @@ function buildPrintHTML(d, ref, date) {
     <dt>Número de activos</dt><dd>${d.nAssets}</dd>
     <dt>Horas de vuelo estimadas</dt><dd>${d.rawFlightHrs.toFixed(1)} hrs</dd>
     <dt>Días de campo estimados</dt><dd>${d.fieldDays} día${d.fieldDays>1?'s':''}</dd>
-    <dt>Factor de complejidad</dt><dd>${d.inspType.toFixed(1)}×</dd>
   </dl>
 
-  <div class="print-section-title">Desglose de costos</div>
+  <div class="print-section-title">Resumen de costos</div>
   <table class="print-breakdown">
     <thead><tr><th>Concepto</th><th style="text-align:right">Monto (MXN)</th></tr></thead>
     <tbody>
-      <tr class="pb-group"><td colspan="2">A — Movilización</td></tr>
-      <tr><td style="padding-left:12px">Transporte (ida y vuelta)</td><td style="text-align:right">${fmx(d.transport)}</td></tr>
-      ${d.airfare > 0 ? `<tr><td style="padding-left:12px">Boletos de avión — crew</td><td style="text-align:right">${fmx(d.airfare)}</td></tr>` : ''}
-      <tr><td style="padding-left:12px">Hospedaje</td><td style="text-align:right">${fmx(d.accomm)}</td></tr>
-      <tr><td style="padding-left:12px">Viáticos</td><td style="text-align:right">${fmx(d.perDiem)}</td></tr>
-      <tr class="pb-subtotal"><td>Subtotal A</td><td style="text-align:right">${fmx(d.layerA)}</td></tr>
-
-      <tr class="pb-group"><td colspan="2">B — Ejecución en campo</td></tr>
-      <tr><td style="padding-left:12px">Piloto(s)</td><td style="text-align:right">${fmx(d.pilotCost)}</td></tr>
-      <tr><td style="padding-left:12px">Ingeniero de inspección</td><td style="text-align:right">${fmx(d.engCost)}</td></tr>
-      <tr><td style="padding-left:12px">Depreciación drone</td><td style="text-align:right">${fmx(d.droneWear)}</td></tr>
-      <tr><td style="padding-left:12px">Consumibles</td><td style="text-align:right">${fmx(d.consumables)}</td></tr>
-      <tr class="pb-subtotal"><td>Subtotal B</td><td style="text-align:right">${fmx(d.layerB)}</td></tr>
-
-      <tr class="pb-group"><td colspan="2">C — Procesamiento y reporte</td></tr>
-      <tr><td style="padding-left:12px">Horas de procesamiento</td><td style="text-align:right">${fmx(d.procCost)}</td></tr>
-      <tr><td style="padding-left:12px">Plataforma iHawk</td><td style="text-align:right">${fmx(d.ihawk)}</td></tr>
-      <tr class="pb-subtotal"><td>Subtotal C</td><td style="text-align:right">${fmx(d.layerC)}</td></tr>
-
-      <tr class="pb-group"><td colspan="2">D — Overhead y riesgo</td></tr>
-      <tr><td style="padding-left:12px">Seguro asignado</td><td style="text-align:right">${fmx(d.insurance)}</td></tr>
-      <tr><td style="padding-left:12px">Permisos / regulatorio</td><td style="text-align:right">${fmx(d.permits)}</td></tr>
-      <tr><td style="padding-left:12px">Contingencia (${Math.round(d.contRate*100)}%)</td><td style="text-align:right">${fmx(d.contAmt)}</td></tr>
-      <tr class="pb-subtotal"><td>Subtotal D</td><td style="text-align:right">${fmx(d.layerD)}</td></tr>
-
-      <tr class="pb-total"><td>Costo base total</td><td style="text-align:right">${fmx(d.baseCost)}</td></tr>
-      ${d.extrasData && d.extrasData.length > 0 ? `
-      <tr class="pb-group"><td colspan="2">Otros conceptos</td></tr>
-      ${d.extrasData.map(e => `<tr><td style="padding-left:12px">${e.desc || 'Sin descripción'}</td><td style="text-align:right">${fmx(parseFloat(e.amount)||0)}</td></tr>`).join('')}
-      <tr class="pb-subtotal"><td>Subtotal Otros</td><td style="text-align:right">${fmx(d.extrasTotal)}</td></tr>
-      ` : ''}
+      <tr><td>Movilización</td><td style="text-align:right">${fmx(d.layerA)}</td></tr>
+      <tr><td>Ejecución en campo</td><td style="text-align:right">${fmx(d.layerB)}</td></tr>
+      <tr><td>Procesamiento y reporte</td><td style="text-align:right">${fmx(d.layerC)}</td></tr>
+      <tr><td>Overhead y riesgo</td><td style="text-align:right">${fmx(d.layerD)}</td></tr>
+      ${d.extrasData && d.extrasData.length > 0
+        ? d.extrasData.map(e => `<tr><td>${e.desc || 'Otros conceptos'}</td><td style="text-align:right">${fmx(parseFloat(e.amount)||0)}</td></tr>`).join('')
+        : ''}
+      <tr class="pb-total"><td>Total</td><td style="text-align:right">${fmx(d.clientPrice)}</td></tr>
     </tbody>
   </table>
 
   <div class="print-total-box">
-    <div>
-      <div class="print-total-label">Total cotización al cliente</div>
-      <div style="font-size:11px;color:#555;margin-top:2px">Margen ${d.margin}% · MX$ ${Math.round(d.grossMarginMXN).toLocaleString('es-MX')} margen bruto · MX$ ${Math.round(d.perAsset).toLocaleString('es-MX')} por activo</div>
-    </div>
+    <div class="print-total-label">Total cotización</div>
     <div class="print-total-val">${fmx(d.clientPrice)}</div>
   </div>
 
@@ -1474,20 +1454,28 @@ function buildPrintHTML(d, ref, date) {
   </div>`;
 }
 
+function triggerPrint(d, ref, date) {
+  document.getElementById('print-area').innerHTML = buildPrintHTML(d, ref, date);
+  const filename = pdfFileName(ref, d.client);
+  // Set title so browser uses it as default filename in Save As PDF dialog
+  const prevTitle = document.title;
+  document.title = filename;
+  window.print();
+  document.title = prevTitle;
+}
+
 function generatePDF() {
   const d = window._qData;
   if (!d) { alert('Completa los campos primero.'); return; }
-  const ref  = g('q-ref').value.trim()  || `COT-${String(quotes.length+1).padStart(3,'0')}`;
+  const ref  = g('q-ref').value.trim() || `COT-${String(quotes.length+1).padStart(3,'0')}`;
   const date = g('q-date').value || new Date().toISOString().slice(0,10);
-  document.getElementById('print-area').innerHTML = buildPrintHTML(d, ref, date);
-  window.print();
+  triggerPrint(d, ref, date);
 }
 
 function printQuote(id) {
   const q = quotes.find(x => x.id === id);
   if (!q) return;
-  document.getElementById('print-area').innerHTML = buildPrintHTML(q, q.ref, q.date);
-  window.print();
+  triggerPrint(q, q.ref, q.date);
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
