@@ -362,22 +362,29 @@
 <div id="config-screen" style="display:none">
   <div class="config-box">
     <h2>Conectar a Supabase</h2>
-    <p>Solo necesitas hacer esto una vez. Abre tu proyecto Supabase, ve a <strong>Settings → API</strong> y pega los valores a continuación.</p>
+    <p>Ve a tu proyecto Supabase → <strong>Settings → API Keys</strong> y pega los valores. Si usas las nuevas keys (<code>sb_publishable_...</code>), también necesitas la <strong>Data API URL</strong> de <strong>Settings → Data API</strong>.</p>
     <div class="config-field">
-      <label>Project URL</label>
+      <label>Project URL <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-tertiary)">— Settings → General → Reference ID → https://[id].supabase.co</span></label>
       <input id="cfg-url" type="text" placeholder="https://xxxxxxxxxxxx.supabase.co" />
     </div>
     <div class="config-field">
-      <label>Anon / public key</label>
-      <input id="cfg-key" type="text" placeholder="eyJhbGciOiJIUzI1NiIs..." />
+      <label>API Key <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-tertiary)">— anon/public (eyJ...) ó publishable (sb_publishable_...)</span></label>
+      <input id="cfg-key" type="text" placeholder="eyJ... ó sb_publishable_..." />
+    </div>
+    <div class="config-field" id="cfg-dataapi-wrap" style="display:none">
+      <label>Data API URL <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text-tertiary)">— Settings → Data API → URL (solo si usas sb_publishable_...)</span></label>
+      <input id="cfg-dataapi" type="text" placeholder="https://xxxxxxxxxxxx.supabase.co/rest/v1 ó similar" />
     </div>
     <div class="config-field">
       <label>Contraseña de la app</label>
-      <input id="cfg-pass" type="password" placeholder="Crea una contraseña para proteger la app" />
+      <input id="cfg-pass" type="password" placeholder="Tu contraseña para proteger la app" />
     </div>
-    <button onclick="saveConfig()">Guardar y continuar →</button>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button onclick="testConnection()" style="flex:1;background:var(--surface2);color:var(--text);border:0.5px solid var(--border-strong);border-radius:var(--radius);padding:9px;font-size:13px;font-family:inherit;cursor:pointer">Probar conexión</button>
+      <button onclick="saveConfig()" style="flex:2;background:var(--text);color:var(--surface);border:none;border-radius:var(--radius);padding:9px;font-size:14px;font-family:inherit;font-weight:500;cursor:pointer">Guardar y continuar →</button>
+    </div>
     <div class="config-error" id="cfg-error"></div>
-    <p class="config-note">Tu Supabase anon key es segura — es una clave pública protegida por políticas RLS. Tu contraseña se hashea y se guarda localmente.</p>
+    <p class="config-note">Tu API key es segura — es pública y protegida por políticas RLS. Tu contraseña se hashea localmente y nunca sale de tu navegador.</p>
   </div>
 </div>
 
@@ -732,17 +739,27 @@ document.querySelectorAll('img[src="LOGO_PLACEHOLDER"]').forEach(el => el.src = 
 const STORAGE_KEY_URL  = 'qc_supa_url';
 const STORAGE_KEY_KEY  = 'qc_supa_key';
 const STORAGE_KEY_HASH = 'qc_pass_hash';
+const STORAGE_KEY_API  = 'qc_supa_apiurl';
 const SESSION_KEY      = 'qc_session';
 const FLEET_KEY        = 'qc_fleet';
 const QUOTES_KEY       = 'qc_quotes';
 
 function getConfig() {
   return {
-    url: localStorage.getItem(STORAGE_KEY_URL) || '',
-    key: localStorage.getItem(STORAGE_KEY_KEY) || '',
-    hash: localStorage.getItem(STORAGE_KEY_HASH) || ''
+    url:        localStorage.getItem(STORAGE_KEY_URL)  || '',
+    key:        localStorage.getItem(STORAGE_KEY_KEY)  || '',
+    hash:       localStorage.getItem(STORAGE_KEY_HASH) || '',
+    dataApiUrl: localStorage.getItem(STORAGE_KEY_API)  || ''
   };
 }
+
+function onKeyInput() {
+  const key = document.getElementById('cfg-key').value.trim();
+  const wrap = document.getElementById('cfg-dataapi-wrap');
+  wrap.style.display = key.startsWith('sb_') ? 'block' : 'none';
+}
+
+// attach listener after DOM ready — done in init()
 
 async function hashPassword(pw) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
@@ -750,29 +767,78 @@ async function hashPassword(pw) {
 }
 
 async function saveConfig() {
-  const url  = document.getElementById('cfg-url').value.trim().replace(/\/$/, '');
-  const key  = document.getElementById('cfg-key').value.trim();
-  const pass = document.getElementById('cfg-pass').value;
-  const err  = document.getElementById('cfg-error');
+  const url     = document.getElementById('cfg-url').value.trim().replace(/\/$/, '');
+  const key     = document.getElementById('cfg-key').value.trim();
+  const pass    = document.getElementById('cfg-pass').value;
+  const dataApi = document.getElementById('cfg-dataapi').value.trim().replace(/\/$/, '');
+  const err     = document.getElementById('cfg-error');
   if (!url || !key || !pass) { err.textContent = 'Todos los campos son obligatorios.'; return; }
   if (!url.startsWith('https://')) { err.textContent = 'La URL debe comenzar con https://'; return; }
-  if (key.length < 20) { err.textContent = 'Esa no parece una clave anon válida.'; return; }
+  if (key.length < 20) { err.textContent = 'Esa no parece una clave válida.'; return; }
+  if (key.startsWith('sb_') && !dataApi) { err.textContent = 'Con las nuevas keys (sb_publishable_...) necesitas también la Data API URL.'; return; }
   err.textContent = 'Guardando…';
   const hash = await hashPassword(pass);
   localStorage.setItem(STORAGE_KEY_URL, url);
   localStorage.setItem(STORAGE_KEY_KEY, key);
   localStorage.setItem(STORAGE_KEY_HASH, hash);
+  localStorage.setItem(STORAGE_KEY_API, dataApi);
   err.textContent = '';
   document.getElementById('config-screen').style.display = 'none';
   showLock();
 }
 
+async function testConnection() {
+  const url     = document.getElementById('cfg-url').value.trim().replace(/\/$/, '');
+  const key     = document.getElementById('cfg-key').value.trim();
+  const dataApi = document.getElementById('cfg-dataapi').value.trim().replace(/\/$/, '');
+  const err     = document.getElementById('cfg-error');
+  if (!url || !key) { err.textContent = 'Ingresa URL y key primero.'; return; }
+  err.textContent = 'Probando conexión…';
+  err.style.color = 'var(--text-secondary)';
+
+  // Build candidate REST base URLs to try
+  const candidates = [];
+  if (dataApi) candidates.push(dataApi);
+  candidates.push(`${url}/rest/v1`);
+
+  for (const base of candidates) {
+    try {
+      const headers = { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` };
+      const res = await fetch(`${base}/costs?limit=1`, { headers });
+      if (res.ok || res.status === 406) {
+        // 406 = table exists but wrong Accept header — still means auth worked
+        err.style.color = 'var(--green)';
+        err.textContent = `✓ Conexión exitosa con: ${base}`;
+        document.getElementById('cfg-dataapi').value = base;
+        document.getElementById('cfg-dataapi-wrap').style.display = 'block';
+        return;
+      } else if (res.status === 401) {
+        err.style.color = 'var(--red)';
+        err.textContent = `✗ 401 con ${base} — key incorrecta o RLS bloqueando acceso anónimo.`;
+      } else if (res.status === 404) {
+        err.style.color = 'var(--red)';
+        err.textContent = `✗ 404 con ${base} — tabla "costs" no encontrada. Asegúrate de haberla creado.`;
+      } else {
+        err.style.color = 'var(--red)';
+        err.textContent = `✗ Error ${res.status} con ${base}`;
+      }
+    } catch(e) {
+      err.style.color = 'var(--red)';
+      err.textContent = `✗ No se pudo conectar a ${base}: ${e.message}`;
+    }
+  }
+}
+
 function showConfig() {
   const cfg = getConfig();
-  document.getElementById('cfg-url').value = cfg.url;
-  document.getElementById('cfg-key').value = cfg.key;
-  document.getElementById('cfg-pass').value = '';
+  document.getElementById('cfg-url').value     = cfg.url;
+  document.getElementById('cfg-key').value     = cfg.key;
+  document.getElementById('cfg-dataapi').value = cfg.dataApiUrl;
+  document.getElementById('cfg-pass').value    = '';
   document.getElementById('cfg-error').textContent = '';
+  document.getElementById('cfg-error').style.color = 'var(--red)';
+  const isNew = cfg.key.startsWith('sb_');
+  document.getElementById('cfg-dataapi-wrap').style.display = isNew ? 'block' : 'none';
   document.getElementById('config-screen').style.display = 'flex';
 }
 
@@ -806,9 +872,20 @@ function showLock() {
 // ─── Supabase API ─────────────────────────────────────────────────────────────
 function sbHeaders() {
   const cfg = getConfig();
-  return { 'Content-Type': 'application/json', apikey: cfg.key, Authorization: `Bearer ${cfg.key}`, Prefer: 'return=representation' };
+  return {
+    'Content-Type': 'application/json',
+    'apikey': cfg.key,
+    'Authorization': `Bearer ${cfg.key}`,
+    'Prefer': 'return=representation'
+  };
 }
-function sbUrl(table) { return `${getConfig().url}/rest/v1/${table}`; }
+function sbRestBase() {
+  const cfg = getConfig();
+  // Use explicit Data API URL if stored (needed for new sb_publishable_ keys)
+  if (cfg.dataApiUrl) return cfg.dataApiUrl;
+  return `${cfg.url}/rest/v1`;
+}
+function sbUrl(table) { return `${sbRestBase()}/${table}`; }
 
 async function sbGet(table) {
   const res = await fetch(`${sbUrl(table)}?order=month.asc`, { headers: sbHeaders() });
@@ -1482,6 +1559,7 @@ function printQuote(id) {
 function init() {
   document.getElementById('c-month').value = today();
   document.getElementById('r-month').value = today();
+  document.getElementById('cfg-key').addEventListener('input', onKeyInput);
   try {
     localStorage.setItem('_test', '1');
     localStorage.removeItem('_test');
