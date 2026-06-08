@@ -741,8 +741,6 @@ const STORAGE_KEY_KEY  = 'qc_supa_key';
 const STORAGE_KEY_HASH = 'qc_pass_hash';
 const STORAGE_KEY_API  = 'qc_supa_apiurl';
 const SESSION_KEY      = 'qc_session';
-const FLEET_KEY        = 'qc_fleet';
-const QUOTES_KEY       = 'qc_quotes';
 
 function getConfig() {
   return {
@@ -902,6 +900,50 @@ async function sbDelete(table, id) {
   if (!res.ok) throw new Error(`Delete ${table} failed: ${res.status}`);
 }
 
+// ─── Fleet & Quotes Supabase helpers ─────────────────────────────────────────
+async function sbGetFleet() {
+  const res = await fetch(`${sbUrl('fleet')}?order=created_at.asc`, { headers: sbHeaders() });
+  if (!res.ok) throw new Error(`Fetch fleet failed: ${res.status}`);
+  const rows = await res.json();
+  // Supabase stores the drone object as JSONB in a 'data' column; unwrap it
+  return rows.map(r => ({ ...r.data, _sbid: r.id }));
+}
+
+async function sbGetQuotes() {
+  const res = await fetch(`${sbUrl('quotes')}?order=created_at.desc`, { headers: sbHeaders() });
+  if (!res.ok) throw new Error(`Fetch quotes failed: ${res.status}`);
+  const rows = await res.json();
+  return rows.map(r => ({ ...r.data, _sbid: r.id }));
+}
+
+async function sbInsertFleet(drone) {
+  const res = await fetch(sbUrl('fleet'), {
+    method: 'POST', headers: sbHeaders(),
+    body: JSON.stringify({ data: drone })
+  });
+  if (!res.ok) throw new Error(`Insert fleet failed: ${res.status}`);
+  const rows = await res.json();
+  return { ...drone, _sbid: rows[0].id };
+}
+
+async function sbInsertQuote(quote) {
+  const res = await fetch(sbUrl('quotes'), {
+    method: 'POST', headers: sbHeaders(),
+    body: JSON.stringify({ data: quote })
+  });
+  if (!res.ok) throw new Error(`Insert quote failed: ${res.status}`);
+  const rows = await res.json();
+  return { ...quote, _sbid: rows[0].id };
+}
+
+async function sbUpdateFleet(sbid, drone) {
+  const res = await fetch(`${sbUrl('fleet')}?id=eq.${sbid}`, {
+    method: 'PATCH', headers: sbHeaders(),
+    body: JSON.stringify({ data: drone })
+  });
+  if (!res.ok) throw new Error(`Update fleet failed: ${res.status}`);
+}
+
 function setSyncStatus(state, msg) {
   const el = document.getElementById('sync-status');
   el.textContent = msg;
@@ -911,15 +953,20 @@ function setSyncStatus(state, msg) {
 // ─── State ────────────────────────────────────────────────────────────────────
 let costs = [], revenue = [];
 let chartMain = null, chartCosts = null, chartCF = null;
-let fleet  = JSON.parse(localStorage.getItem(FLEET_KEY)  || '[]');
-let quotes = JSON.parse(localStorage.getItem(QUOTES_KEY) || '[]');
+let fleet  = [];
+let quotes = [];
 
 async function showApp() {
   document.getElementById('app').style.display = 'block';
   document.getElementById('loading-overlay').style.display = 'flex';
   setSyncStatus('', 'Cargando…');
   try {
-    [costs, revenue] = await Promise.all([sbGet('costs'), sbGet('revenue')]);
+    [costs, revenue, fleet, quotes] = await Promise.all([
+      sbGet('costs'),
+      sbGet('revenue'),
+      sbGetFleet(),
+      sbGetQuotes()
+    ]);
     setSyncStatus('ok', 'Sincronizado');
   } catch(e) {
     setSyncStatus('err', 'Error de sincronización');
@@ -1159,9 +1206,7 @@ function renderCashflow() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // FLOTA
 // ═══════════════════════════════════════════════════════════════════════════════
-function saveFleet() { localStorage.setItem(FLEET_KEY, JSON.stringify(fleet)); }
-
-function addDrone() {
+async function addDrone() {
   const name = document.getElementById('d-name').value.trim();
   if (!name) { alert('El nombre del drone es obligatorio.'); return; }
   const drone = {
@@ -1176,20 +1221,30 @@ function addDrone() {
     maintint: parseInt(document.getElementById('d-maintint').value) || 90,
     notes:    document.getElementById('d-notes').value.trim()
   };
-  fleet.push(drone);
-  saveFleet();
-  ['d-name','d-cost','d-dep','d-ins','d-maint','d-maintint','d-notes'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('d-status').value = 'active';
-  renderFleet();
-  populateDroneSelect();
+  setSyncStatus('', 'Guardando drone…');
+  try {
+    const saved = await sbInsertFleet(drone);
+    fleet.push(saved);
+    setSyncStatus('ok', 'Guardado');
+    ['d-name','d-cost','d-dep','d-ins','d-maint','d-maintint','d-notes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('d-status').value = 'active';
+    renderFleet();
+    populateDroneSelect();
+  } catch(e) { setSyncStatus('err', 'Error al guardar drone'); console.error(e); }
 }
 
-function deleteDrone(id) {
+async function deleteDrone(id) {
   if (!confirm('¿Eliminar este drone de la flota?')) return;
-  fleet = fleet.filter(d => d.id !== id);
-  saveFleet();
-  renderFleet();
-  populateDroneSelect();
+  const drone = fleet.find(d => d.id === id);
+  if (!drone || !drone._sbid) return;
+  setSyncStatus('', 'Eliminando…');
+  try {
+    await sbDelete('fleet', drone._sbid);
+    fleet = fleet.filter(d => d.id !== id);
+    setSyncStatus('ok', 'Eliminado');
+    renderFleet();
+    populateDroneSelect();
+  } catch(e) { setSyncStatus('err', 'Error al eliminar drone'); console.error(e); }
 }
 
 function renderFleet() {
@@ -1220,7 +1275,7 @@ function renderFleet() {
   }).join('');
 }
 
-function editDrone(id) {
+async function editDrone(id) {
   const d = fleet.find(x => x.id === id);
   if (!d) return;
   document.getElementById('d-name').value     = d.name;
@@ -1232,8 +1287,11 @@ function editDrone(id) {
   document.getElementById('d-maint').value    = d.maint;
   document.getElementById('d-maintint').value = d.maintint;
   document.getElementById('d-notes').value    = d.notes;
+  // Remove from Supabase so re-adding creates a fresh record
+  if (d._sbid) {
+    try { await sbDelete('fleet', d._sbid); } catch(e) { console.error(e); }
+  }
   fleet = fleet.filter(x => x.id !== id);
-  saveFleet();
   renderFleet();
   populateDroneSelect();
   document.getElementById('d-name').focus();
@@ -1410,23 +1468,33 @@ function qCalc() {
 }
 
 // ─── Save & list quotes ───────────────────────────────────────────────────────
-function saveCotizacion() {
+async function saveCotizacion() {
   const d = window._qData;
   if (!d) { alert('Completa los campos primero.'); return; }
   const ref  = g('q-ref').value.trim() || `COT-${String(quotes.length+1).padStart(3,'0')}`;
   const date = g('q-date').value || new Date().toISOString().slice(0,10);
   const quote = { id: Date.now(), ref, date, ...d };
-  quotes.unshift(quote);
-  localStorage.setItem(QUOTES_KEY, JSON.stringify(quotes));
-  renderQuotesList();
-  alert(`Cotización ${ref} guardada.`);
+  setSyncStatus('', 'Guardando cotización…');
+  try {
+    const saved = await sbInsertQuote(quote);
+    quotes.unshift(saved);
+    setSyncStatus('ok', 'Guardado');
+    renderQuotesList();
+    alert(`Cotización ${ref} guardada.`);
+  } catch(e) { setSyncStatus('err', 'Error al guardar cotización'); console.error(e); }
 }
 
-function deleteQuote(id) {
+async function deleteQuote(id) {
   if (!confirm('¿Eliminar esta cotización?')) return;
-  quotes = quotes.filter(q => q.id !== id);
-  localStorage.setItem(QUOTES_KEY, JSON.stringify(quotes));
-  renderQuotesList();
+  const quote = quotes.find(q => q.id === id);
+  if (!quote || !quote._sbid) return;
+  setSyncStatus('', 'Eliminando…');
+  try {
+    await sbDelete('quotes', quote._sbid);
+    quotes = quotes.filter(q => q.id !== id);
+    setSyncStatus('ok', 'Eliminado');
+    renderQuotesList();
+  } catch(e) { setSyncStatus('err', 'Error al eliminar cotización'); console.error(e); }
 }
 
 function loadQuote(id) {
