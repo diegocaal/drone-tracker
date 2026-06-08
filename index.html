@@ -1419,7 +1419,13 @@ function qCalc() {
     client: g('q-client').value || '—',
     site:   g('q-site').value   || '—',
     inspName: g('q-type').options[g('q-type').selectedIndex].text,
-    droneName: selOpt && selOpt.value ? selOpt.text : '—',
+    droneName: selOpt && selOpt.value ? (() => {
+      const drone = fleet.find(d => String(d.id) === selOpt.value);
+      if (!drone) return '—';
+      const serial = drone.name.replace(/\s/g, '');
+      const last5  = serial.slice(-5);
+      return `${drone.model} ···${last5}`;
+    })() : '—',
     notes: g('q-notes').value
   };
 
