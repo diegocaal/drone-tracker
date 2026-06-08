@@ -1553,7 +1553,23 @@ function pdfFileName(ref, client) {
 function buildPrintHTML(d, ref, date) {
   const fmx = n => 'MX$ ' + Math.round(n).toLocaleString('es-MX');
   const now  = new Date().toLocaleDateString('es-MX', {year:'numeric',month:'long',day:'numeric'});
-  const totalWithExtras = d.baseCost + (d.extrasTotal || 0);
+
+  // Apply margin to each layer so client cannot back-calculate it
+  const m = 1 + (d.margin / 100);
+  const pA = d.layerA * m;
+  const pB = d.layerB * m;
+  const pC = d.layerC * m;
+  const pD = d.layerD * m;
+  const extrasWithMargin = (d.extrasData || []).map(e => ({
+    desc: e.desc,
+    amount: (parseFloat(e.amount) || 0) * m
+  }));
+
+  // Subtotal = sum of all margin-inclusive lines (equals clientPrice)
+  const subtotal = pA + pB + pC + pD + extrasWithMargin.reduce((s,e) => s + e.amount, 0);
+  const iva      = subtotal * 0.16;
+  const total    = subtotal + iva;
+
   return `
   <div class="print-header">
     <img class="print-header-logo" src="${LOGO_SRC}" alt="QuimiCorp" />
@@ -1581,20 +1597,22 @@ function buildPrintHTML(d, ref, date) {
   <table class="print-breakdown">
     <thead><tr><th>Concepto</th><th style="text-align:right">Monto (MXN)</th></tr></thead>
     <tbody>
-      <tr><td>Movilización</td><td style="text-align:right">${fmx(d.layerA)}</td></tr>
-      <tr><td>Ejecución en campo</td><td style="text-align:right">${fmx(d.layerB)}</td></tr>
-      <tr><td>Procesamiento y reporte</td><td style="text-align:right">${fmx(d.layerC)}</td></tr>
-      <tr><td>Overhead y riesgo</td><td style="text-align:right">${fmx(d.layerD)}</td></tr>
-      ${d.extrasData && d.extrasData.length > 0
-        ? d.extrasData.map(e => `<tr><td>${e.desc || 'Otros conceptos'}</td><td style="text-align:right">${fmx(parseFloat(e.amount)||0)}</td></tr>`).join('')
+      <tr><td>Movilización</td><td style="text-align:right">${fmx(pA)}</td></tr>
+      <tr><td>Ejecución en campo</td><td style="text-align:right">${fmx(pB)}</td></tr>
+      <tr><td>Procesamiento y reporte</td><td style="text-align:right">${fmx(pC)}</td></tr>
+      <tr><td>Overhead y riesgo</td><td style="text-align:right">${fmx(pD)}</td></tr>
+      ${extrasWithMargin.length > 0
+        ? extrasWithMargin.map(e => `<tr><td>${e.desc || 'Otros conceptos'}</td><td style="text-align:right">${fmx(e.amount)}</td></tr>`).join('')
         : ''}
-      <tr class="pb-total"><td>Total</td><td style="text-align:right">${fmx(d.clientPrice)}</td></tr>
+      <tr class="pb-subtotal"><td>Subtotal</td><td style="text-align:right">${fmx(subtotal)}</td></tr>
+      <tr><td style="color:#555">IVA (16%)</td><td style="text-align:right;color:#555">${fmx(iva)}</td></tr>
+      <tr class="pb-total"><td>Total</td><td style="text-align:right">${fmx(total)}</td></tr>
     </tbody>
   </table>
 
   <div class="print-total-box">
-    <div class="print-total-label">Total cotización</div>
-    <div class="print-total-val">${fmx(d.clientPrice)}</div>
+    <div class="print-total-label">Total cotización <span style="font-size:11px;color:#555;font-weight:400">(IVA incluido)</span></div>
+    <div class="print-total-val">${fmx(total)}</div>
   </div>
 
   ${d.notes ? `<div class="print-notes"><strong>Notas y condiciones:</strong><br>${d.notes}</div>` : ''}
